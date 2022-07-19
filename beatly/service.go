@@ -3,7 +3,6 @@ package beatly
 import (
 	"fmt"
 	"net/http"
-	"time"
 )
 
 // Service is a core building block of the BEAT.ly service. It provides methods
@@ -56,5 +55,5 @@ func (s *service) Read(id string) (*Link, error) {
 }
 
 func (s *service) Visit(id string) (*Link, error) {
-	return s.store.Visit(id, time.Now())
+	return s.store.Visit(id)
 }

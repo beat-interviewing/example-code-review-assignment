@@ -20,7 +20,7 @@ type Store interface {
 
 	// Visit retrieves a link from disk matching the provided id and registers
 	// the time of each request for analytics purposes.
-	Visit(id string, t time.Time) (*Link, error)
+	Visit(id string) (*Link, error)
 }
 
 type store struct {
@@ -86,7 +86,7 @@ func (s *store) Read(id string) (link *Link, err error) {
 	return
 }
 
-func (s *store) Visit(id string, t time.Time) (link *Link, err error) {
+func (s *store) Visit(id string) (link *Link, err error) {
 
 	err = s.db.Update(func(tx *bolt.Tx) error {
 
@@ -105,7 +105,7 @@ func (s *store) Visit(id string, t time.Time) (link *Link, err error) {
 			return err
 		}
 
-		link.Visits = append(link.Visits, t)
+		link.Visits = append(link.Visits, time.Now())
 
 		buf, err = json.Marshal(link)
 		if err != nil {
