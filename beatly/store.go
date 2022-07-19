@@ -18,7 +18,7 @@ type Store interface {
 	// Read retrieves a link from disk matching the provided id.
 	Read(id string) (*Link, error)
 
-	// Read retrieves a link from disk matching the provided id and registers
+	// Visit retrieves a link from disk matching the provided id and registers
 	// the time of each request for analytics purposes.
 	Visit(id string, t time.Time) (*Link, error)
 }
