@@ -1,0 +1,34 @@
+challenge:
+  
+  create_pull_request:
+    head: pr
+    base: main
+    paths: 
+    - '!.github/assignment.yml'
+    title: 'Introduce analytics functionality'
+    body: |
+      ## Description
+
+      I've introduced the functionality of counting each visit for later analysis. Each visit is registered atomically and in real-time.
+
+      In addition to tracking each visit a new read endpoint makes link metadata and analytics available to users at their chosen granularity.
+
+      ## Review Checklist
+
+      - [ ] Design is appropriate for the task
+      - [ ] Requirements have been met
+      - [ ] Free of potential bugs
+      - [ ] Tests verify the code against requirements and edge cases
+      - [ ] Style is consistent and idiomatic
+
+review:
+  
+  comments:
+
+  - path: beatly/ride.go
+    start_line: 10
+    line: 16
+    body: |
+      **Style & Consistency:** Missing comment on an exported `struct`.
+
+      **Points**: 1
