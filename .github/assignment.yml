@@ -32,12 +32,3 @@ review:
       **Style & Consistency:** Missing comment on an exported `struct`.
 
       **Points**: 1
-  
-  - path: beatly/store.go
-    line: 108
-    body: |
-      **Tests:** The use of `time.Now()` makes the function less predictable when testing.
-
-      A possible alternative is to pass the time as an argument to the function. Another is to abstract the call to time now, in a way that can be mocked when testing.
-
-      **Points**: 1
