@@ -9,15 +9,36 @@ challenge:
     body: |
       ## Description
 
-      I've introduced the functionality of counting each visit for later analysis. Each visit is registered atomically and in real-time.
+      I've introduced the functionality of counting each visit for later analysis. Each visit is registered in real-time.
 
-      In addition to tracking each visit a new read endpoint makes link metadata and analytics available to users at their chosen granularity.
+      In addition to tracking each visit a new read endpoint makes link metadata and analytics available at a chosen interval.
+
+      ```
+      POST /link/NvE?per=1s HTTP/1.1
+      Host: beat.ly
+      ```
+
+      ```
+      HTTP/1.1 200 OK
+      
+      {
+          "id": "NvE",
+          "url": "https://beat.ly/NvE",
+          "target": "https://en.wikipedia.org/wiki/URL_shortening#Techniques",
+          "redirect": 302,
+          "visits": {
+              "2022-07-27T11:42": 11
+              "2022-07-27T11:43": 7
+              "2022-07-27T11:44": 9
+          }
+      }
+      ```
 
       ## Review Checklist
 
       - [ ] Design is appropriate for the task
       - [ ] Requirements have been met
-      - [ ] Free of potential bugs
+      - [ ] Free of potential bugs and security issues
       - [ ] Tests verify the code against requirements and edge cases
       - [ ] Style is consistent and idiomatic
 
@@ -25,10 +46,19 @@ review:
   
   comments:
 
-  - path: beatly/ride.go
-    start_line: 10
-    line: 16
+  - path: beatly/store.go
+    start_line: 97
+    line: 113
     body: |
-      **Style & Consistency:** Missing comment on an exported `struct`.
+      **Design:** The additional database interaction is performed serially adding to the overall response time.
 
-      **Points**: 1
+      Consider concurrent mechanisms to improve response times. 
+
+      **Points**: 4
+  
+  - path: beatly/store.go
+    line: 97
+    body: |
+      **Design:** The select query has no limit and has the potential of loading large amounts of data in memory.
+
+      **Points**: 4
