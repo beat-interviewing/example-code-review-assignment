@@ -62,24 +62,27 @@ func ErrorEncoder() transport.ErrorEncoder {
 //
 // This function will be passed a CreateRequest as an argument and will return a
 // CreateResponse as a result.
-func CreateEndpoint(s Service) endpoint.Endpoint {
-	return func(ctx context.Context, v interface{}) (interface{}, error) {
+func CreateEndpoint(service Service) endpoint.Endpoint {
+	return func(_ context.Context, v interface{}) (interface{}, error) {
+
 		req := v.(*CreateRequest)
+
 		link := &Link{
 			Target:   req.Target,
 			Redirect: req.Redirect,
 		}
-		err := s.Create(link)
+
+		err := service.Create(link)
 		if err != nil {
 			return nil, err
 		}
-		res := &CreateResponse{
+
+		return &CreateResponse{
 			ID:       link.IDHash,
 			URL:      fmt.Sprintf("https://beat.ly/%s", link.IDHash),
 			Target:   link.Target,
 			Redirect: link.Redirect,
-		}
-		return res, nil
+		}, nil
 	}
 }
 
@@ -116,28 +119,32 @@ func EncodeCreateResponse() transport.EncodeResponseFunc {
 //
 // This function will be passed a ReadRequest as an argument and will return a
 // ReadResponse as a result.
-func ReadEndpoint(s Service) endpoint.Endpoint {
-	return func(ctx context.Context, v interface{}) (interface{}, error) {
-		req := v.(*ReadRequest)
-		link, err := s.Read(req.ID)
+func ReadEndpoint(service Service) endpoint.Endpoint {
+	return func(_ context.Context, req interface{}) (interface{}, error) {
+
+		r := req.(*ReadRequest)
+
+		link, err := service.Read(r.ID)
 		if err != nil {
 			return nil, err
 		}
+
 		return &ReadResponse{
 			ID:       link.IDHash,
 			URL:      fmt.Sprintf("https://beat.ly/%s", link.IDHash),
 			Target:   link.Target,
 			Redirect: link.Redirect,
-			Visits:   link.VisitsPer(req.Granularity),
+			Visits:   link.VisitsPer(r.Interval),
 		}, nil
 	}
 }
 
 type ReadRequest struct {
-	ID          string
-	Granularity time.Duration
+	ID       string
+	Interval time.Duration
 }
 
+// DecodeReadRequest extracts a ReadRequest from the incoming HTTP request.
 func DecodeReadRequest() transport.DecodeRequestFunc {
 	return func(_ context.Context, req *http.Request) (interface{}, error) {
 		r := &ReadRequest{}
@@ -153,13 +160,15 @@ func DecodeReadRequest() transport.DecodeRequestFunc {
 		p := q.Get("per")
 		switch p {
 		case "1s":
-			r.Granularity = time.Second
+			r.Interval = time.Second
 		case "1m":
-			r.Granularity = time.Minute
+			r.Interval = time.Minute
 		case "1h", "":
-			r.Granularity = time.Hour
+			// The 1h interval is also the default. If left empty it will be
+			// set to 1h.
+			r.Interval = time.Hour
 		case "1d":
-			r.Granularity = 24 * time.Hour
+			r.Interval = 24 * time.Hour
 		default:
 			return nil, fmt.Errorf("invalid request: the `per` field can be one of 1s, 1m, 1h, 1d")
 		}
@@ -185,13 +194,14 @@ func EncodeReadResponse() transport.EncodeResponseFunc {
 //
 // This function will be passed a VisitRequest as an argument and will return a
 // VisitResponse as a result.
-func VisitEndpoint(s Service) endpoint.Endpoint {
-	return func(ctx context.Context, v interface{}) (interface{}, error) {
-		req := v.(*VisitRequest)
-		link, err := s.Visit(req.ID)
+func VisitEndpoint(service Service) endpoint.Endpoint {
+	return func(_ context.Context, req interface{}) (interface{}, error) {
+
+		link, err := service.Visit(req.(*VisitRequest).ID)
 		if err != nil {
 			return nil, err
 		}
+
 		return &VisitResponse{
 			Target:   link.Target,
 			Redirect: link.Redirect,
@@ -200,13 +210,12 @@ func VisitEndpoint(s Service) endpoint.Endpoint {
 }
 
 type VisitRequest struct {
-	ID          string
-	Aggregation string
+	ID string
 }
 
 func DecodeVisitRequest() transport.DecodeRequestFunc {
-	return func(_ context.Context, r *http.Request) (interface{}, error) {
-		m := mux.Vars(r)
+	return func(_ context.Context, req *http.Request) (interface{}, error) {
+		m := mux.Vars(req)
 		if id, ok := m["id"]; ok {
 			return &VisitRequest{ID: id}, nil
 		}
@@ -220,10 +229,10 @@ type VisitResponse struct {
 }
 
 func EncodeVisitResponse() transport.EncodeResponseFunc {
-	return func(ctx context.Context, w http.ResponseWriter, v interface{}) error {
-		res := v.(*VisitResponse)
-		w.Header().Set("Location", res.Target)
-		w.WriteHeader(res.Redirect)
+	return func(_ context.Context, w http.ResponseWriter, req interface{}) error {
+		r := req.(*VisitResponse)
+		w.Header().Set("Location", r.Target)
+		w.WriteHeader(r.Redirect)
 		return nil
 	}
 }
