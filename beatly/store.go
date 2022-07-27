@@ -1,135 +1,188 @@
 package beatly
 
 import (
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/speps/go-hashids"
-	bolt "go.etcd.io/bbolt"
 )
 
 // Store is the persistence layer of the BEAT.ly service.
 type Store interface {
 
-	// Create persists a link to disk.
-	Create(*Link) error
+	// Create persists a link to disk. Upon successful completion the link will
+	// have its ID and IDHash fields set.
+	Create(link *Link) error
 
-	// Read retrieves a link from disk matching the provided id.
-	Read(id string) (*Link, error)
+	// Read retrieves a link and its visit metadata from disk matching the
+	// provided id hash.
+	Read(hash string) (*Link, error)
 
-	// Visit retrieves a link from disk matching the provided id and registers
-	// the time of each request for analytics purposes.
-	Visit(id string) (*Link, error)
+	// Visit retrieves a link from disk matching the provided id hash and
+	// registers the time of each request for analytics purposes.
+	Visit(hash string) (*Link, error)
 }
 
-type store struct {
-	db *bolt.DB
+type sqlite struct {
+	db *sql.DB
+	m  *migrate.Migrate
 }
 
-// NewBoltStore returns an implementation of Store which relies on
-// BoltDB for persistence.
+// NewSQLiteStore returns an implementation of Store which relies on SQLite for
+// persistence.
 //
-// Bolt is a pure Go key/value store with a goal to provide a simple, fast, and
-// reliable database for projects that don't require a full database server.
-//
-// As such programs that rely on this implementation of Store cannot be
-// deployed in a replicated manner.
-func NewBoltStore(dsn string) (Store, error) {
-	db, err := bolt.Open(dsn, 0600, nil)
+// SQLite is a library that implements a small, fast, self-contained,
+// high-reliability, full-featured, SQL database engine.
+func NewSQLiteStore(dsn string) (Store, error) {
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, err
 	}
-	return &store{db}, nil
+	m, err := migrate.New("file://migrations", fmt.Sprintf("sqlite3://%s", dsn))
+	if err != nil {
+		return nil, err
+	}
+	err = m.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		return nil, err
+	}
+	return &sqlite{db, m}, nil
 }
 
-func (s *store) Create(link *Link) error {
+func (s *sqlite) Create(link *Link) error {
 
-	return s.db.Update(func(tx *bolt.Tx) error {
+	r, err := s.db.Exec(`insert into links(target, redirect) values (?, ?)`, link.Target, link.Redirect)
+	if err != nil {
+		return fmt.Errorf("insert failed. %w", err)
+	}
 
-		b, err := tx.CreateBucketIfNotExists([]byte("links"))
-		if err != nil {
-			return err
-		}
+	id, _ := r.LastInsertId()
 
-		id, _ := b.NextSequence()
+	link.ID = id
+	link.IDHash, err = Encode(id)
+	if err != nil {
+		return err
+	}
 
-		link.ID = int(id)
-		link.IDHash = hash(link.ID)
-
-		buf, err := json.Marshal(link)
-		if err != nil {
-			return err
-		}
-
-		return b.Put([]byte(link.IDHash), buf)
-	})
+	return nil
 }
 
-func (s *store) Read(id string) (link *Link, err error) {
+func (s *sqlite) Read(hash string) (*Link, error) {
 
-	err = s.db.View(func(tx *bolt.Tx) error {
+	// Decode the hash to get the numeric id of the link. From this moment on we
+	// will be mostly using the id.
+	id, err := Decode(hash)
+	if err != nil {
+		return nil, err
+	}
 
-		b := tx.Bucket([]byte("links"))
-		if b == nil {
-			return fmt.Errorf("not found")
+	link := &Link{
+		ID:     id,
+		IDHash: hash,
+	}
+
+	// Query the database for the link by its id.
+	row := s.db.QueryRow(`select id, target, redirect from links where id = ?`, link.ID)
+	err = row.Scan(&link.ID, &link.Target, &link.Redirect)
+	if err != nil {
+		return nil, err
+	}
+
+	// Query the database for the links visits through time.
+	rows, err := s.db.Query(`select ts from link_visits where id_link = ?`, link.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ts string
+		err = rows.Scan(&ts)
+		if err != nil {
+			return nil, err
 		}
-
-		buf := b.Get([]byte(id))
-		if buf == nil {
-			return fmt.Errorf("not found")
+		visit, err := time.Parse(time.RFC3339, ts)
+		if err != nil {
+			return nil, err
 		}
+		link.Visits = append(link.Visits, visit)
+	}
 
-		return json.Unmarshal(buf, &link)
-	})
-
-	return
+	return link, nil
 }
 
-func (s *store) Visit(id string) (link *Link, err error) {
+func (s *sqlite) Visit(hash string) (*Link, error) {
 
-	err = s.db.Update(func(tx *bolt.Tx) error {
+	// Decode the hash to get the numeric id of the link. From this moment on we
+	// will be mostly using the id.
+	id, err := Decode(hash)
+	if err != nil {
+		return nil, err
+	}
 
-		b := tx.Bucket([]byte("links"))
-		if b == nil {
-			return fmt.Errorf("not found")
-		}
+	link := &Link{
+		ID:     id,
+		IDHash: hash,
+	}
 
-		buf := b.Get([]byte(id))
-		if buf == nil {
-			return fmt.Errorf("not found")
-		}
+	// Query the database for the link by its id.
+	row := s.db.QueryRow(`select id, target, redirect from links where id = ?`, id)
+	err = row.Scan(&link.ID, &link.Target, &link.Redirect)
+	if err != nil {
+		return nil, err
+	}
 
-		err := json.Unmarshal(buf, &link)
-		if err != nil {
-			return err
-		}
+	// Create an entry in the link visits table for later analysis.
+	ts := time.Now().Format(time.RFC3339)
+	_, err = s.db.Exec(`insert into link_visits (id_link, ts) values (? , ?)`, link.ID, ts)
+	if err != nil {
+		return nil, err
+	}
 
-		link.Visits = append(link.Visits, time.Now())
-
-		buf, err = json.Marshal(link)
-		if err != nil {
-			return err
-		}
-
-		return b.Put([]byte(id), buf)
-	})
-
-	return
+	return link, nil
 }
 
+// Using the hashids library we will generate short, unique, non-sequential
+// hashes from numeric ids.
+//
+// Hashes are preferable to numeric auto-incrementing ids by being less
+// predictable or guessable.
+//
+// The configuration below uses a random 32 character string as salt, making the
+// generated hashes harder to guess.
+//
+// The minimum length of hashes will be at least 3 characters long.
+//
+// The generated hashes will be a encoded in base62 which is more friendly to
+// URLs than the popular base64 encoding as it omits the `+` and `/` characters.
+//
+// References:
+// 	- https://en.wikipedia.org/wiki/URL_shortening#Techniques
+//  - https://en.wikipedia.org/wiki/Base62
+// 	- https://hashids.org/go/
+//
 var hd = &hashids.HashIDData{
-	Salt:      "beat.ly",
+	Salt:      "f29490b05e6049908ae6aa6d6312ea85",
 	MinLength: 3,
 	Alphabet:  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890",
 }
 
 var h, _ = hashids.NewWithData(hd)
 
-func hash(in int) string {
-	s, err := h.Encode([]int{in})
+// Encode a numeric id to a hash.
+func Encode(i int64) (string, error) {
+	return h.EncodeInt64([]int64{i})
+}
+
+// Decode reverses a hash back to its original numeric value.
+func Decode(s string) (int64, error) {
+	i, err := h.DecodeInt64WithError(s)
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
-	return s
+	return i[0], nil
 }
