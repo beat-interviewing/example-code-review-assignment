@@ -18,10 +18,6 @@ type Service interface {
 	// IDHash fields set to an auto-incremented id and its hash respectively.
 	Create(link *Link) error
 
-	// Read returns a link matching the supplied id. If no link was found error
-	// will be non-nil.
-	Read(id string) (*Link, error)
-
 	// Visit retrieves a link matching the provided id, and registers the time
 	// of retrieval for analytics purposes.
 	Visit(id string) (*Link, error)
@@ -48,10 +44,6 @@ func (s *service) Create(link *Link) error {
 	}
 
 	return s.store.Create(link)
-}
-
-func (s *service) Read(id string) (*Link, error) {
-	return s.store.Read(id)
 }
 
 func (s *service) Visit(id string) (*Link, error) {

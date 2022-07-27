@@ -3,7 +3,6 @@ package beatly
 import (
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -18,10 +17,6 @@ type Store interface {
 	// Create persists a link to disk. Upon successful completion the link will
 	// have its ID and IDHash fields set.
 	Create(link *Link) error
-
-	// Read retrieves a link and its visit metadata from disk matching the
-	// provided id hash.
-	Read(hash string) (*Link, error)
 
 	// Visit retrieves a link from disk matching the provided id hash and
 	// registers the time of each request for analytics purposes.
@@ -72,49 +67,6 @@ func (s *sqlite) Create(link *Link) error {
 	return nil
 }
 
-func (s *sqlite) Read(hash string) (*Link, error) {
-
-	// Decode the hash to get the numeric id of the link. From this moment on we
-	// will be mostly using the id.
-	id, err := Decode(hash)
-	if err != nil {
-		return nil, err
-	}
-
-	link := &Link{
-		ID:     id,
-		IDHash: hash,
-	}
-
-	// Query the database for the link by its id.
-	row := s.db.QueryRow(`select id, target, redirect from links where id = ?`, link.ID)
-	err = row.Scan(&link.ID, &link.Target, &link.Redirect)
-	if err != nil {
-		return nil, err
-	}
-
-	// Query the database for the links visits through time.
-	rows, err := s.db.Query(`select ts from link_visits where id_link = ?`, link.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var ts string
-		err = rows.Scan(&ts)
-		if err != nil {
-			return nil, err
-		}
-		visit, err := time.Parse(time.RFC3339, ts)
-		if err != nil {
-			return nil, err
-		}
-		link.Visits = append(link.Visits, visit)
-	}
-
-	return link, nil
-}
-
 func (s *sqlite) Visit(hash string) (*Link, error) {
 
 	// Decode the hash to get the numeric id of the link. From this moment on we
@@ -132,13 +84,6 @@ func (s *sqlite) Visit(hash string) (*Link, error) {
 	// Query the database for the link by its id.
 	row := s.db.QueryRow(`select id, target, redirect from links where id = ?`, id)
 	err = row.Scan(&link.ID, &link.Target, &link.Redirect)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create an entry in the link visits table for later analysis.
-	ts := time.Now().Format(time.RFC3339)
-	_, err = s.db.Exec(`insert into link_visits (id_link, ts) values (? , ?)`, link.ID, ts)
 	if err != nil {
 		return nil, err
 	}

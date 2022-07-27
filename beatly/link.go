@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // Link is the internal representation of a shortened link.
@@ -24,46 +23,6 @@ type Link struct {
 	// Redirect determines the 3xx HTTP status code used when performing the
 	// redirect.
 	Redirect int
-
-	// Visits holds past visits for analytics purposes. See the VisitsPer method
-	// on how visits can be aggregated per second, minute, hour or day.
-	Visits []time.Time
-}
-
-// VisitsPer aggregates the number of visits by the selected interval. The
-// result is a map where keys are times and values are the number of visits.
-func (link *Link) VisitsPer(interval time.Duration) (visits map[string]int) {
-
-	var key string
-
-	switch interval {
-	case time.Second:
-		key = "2006-01-02T15:04:05"
-	case time.Minute:
-		key = "2006-01-02T15:04"
-	case time.Hour:
-		key = "2006-01-02T15"
-	case time.Hour * 24:
-		key = "2006-01-02"
-	default:
-		panic("invalid argument")
-	}
-
-	visits = make(map[string]int)
-
-	// Count visits grouped by the chosen interval.
-	for _, visit := range link.Visits {
-
-		visitKey := visit.Format(key)
-
-		_, ok := visits[visitKey]
-		if !ok {
-			visits[visitKey] = 0
-		}
-		visits[visitKey]++
-	}
-
-	return visits
 }
 
 func (link *Link) Validate() error {

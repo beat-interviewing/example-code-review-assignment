@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/gorilla/mux"
 
@@ -27,13 +26,6 @@ func Handler(s Service) http.Handler {
 		EncodeCreateResponse(),
 		transport.ServerErrorEncoder(ErrorEncoder()),
 	)).Methods("POST")
-
-	r.Handle("/link/{id}", transport.NewServer(
-		ReadEndpoint(s),
-		DecodeReadRequest(),
-		EncodeReadResponse(),
-		transport.ServerErrorEncoder(ErrorEncoder()),
-	)).Methods("GET")
 
 	r.Handle("/{id}", transport.NewServer(
 		VisitEndpoint(s),
@@ -111,81 +103,6 @@ func (r *CreateResponse) StatusCode() int {
 }
 
 func EncodeCreateResponse() transport.EncodeResponseFunc {
-	return transport.EncodeJSONResponse
-}
-
-// ReadEndpoint encapsulates the business logic of retrieving a shortened link
-// and its associated analytics.
-//
-// This function will be passed a ReadRequest as an argument and will return a
-// ReadResponse as a result.
-func ReadEndpoint(service Service) endpoint.Endpoint {
-	return func(_ context.Context, req interface{}) (interface{}, error) {
-
-		r := req.(*ReadRequest)
-
-		link, err := service.Read(r.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		return &ReadResponse{
-			ID:       link.IDHash,
-			URL:      fmt.Sprintf("https://beat.ly/%s", link.IDHash),
-			Target:   link.Target,
-			Redirect: link.Redirect,
-			Visits:   link.VisitsPer(r.Interval),
-		}, nil
-	}
-}
-
-type ReadRequest struct {
-	ID       string
-	Interval time.Duration
-}
-
-// DecodeReadRequest extracts a ReadRequest from the incoming HTTP request.
-func DecodeReadRequest() transport.DecodeRequestFunc {
-	return func(_ context.Context, req *http.Request) (interface{}, error) {
-		r := &ReadRequest{}
-
-		m := mux.Vars(req)
-		id, ok := m["id"]
-		if !ok {
-			return nil, fmt.Errorf("invalid request: the `id` field is required")
-		}
-		r.ID = id
-
-		q := req.URL.Query()
-		p := q.Get("per")
-		switch p {
-		case "1s":
-			r.Interval = time.Second
-		case "1m":
-			r.Interval = time.Minute
-		case "1h", "":
-			// The 1h interval is also the default. If left empty it will be
-			// set to 1h.
-			r.Interval = time.Hour
-		case "1d":
-			r.Interval = 24 * time.Hour
-		default:
-			return nil, fmt.Errorf("invalid request: the `per` field can be one of 1s, 1m, 1h, 1d")
-		}
-
-		return r, nil
-	}
-}
-
-type ReadResponse struct {
-	ID       string      `json:"id"`
-	URL      string      `json:"url"`
-	Target   string      `json:"target"`
-	Redirect int         `json:"redirect"`
-	Visits   interface{} `json:"visits,omitempty"`
-}
-
-func EncodeReadResponse() transport.EncodeResponseFunc {
 	return transport.EncodeJSONResponse
 }
 
