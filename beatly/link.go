@@ -7,20 +7,36 @@ import (
 	"time"
 )
 
+// Link is the internal representation of a shortened link.
 type Link struct {
-	ID       int
-	IDHash   string
-	Target   string
+
+	// The link id as determined by the underlying data store. This will likely
+	// be an auto-incrementing integer in most relational databases.
+	ID int64
+
+	// The link id hash is computed using the link id as input.
+	IDHash string
+
+	// Target is a non-shortened URL which the service will redirect to when the
+	// short URL is visited.
+	Target string
+
+	// Redirect determines the 3xx HTTP status code used when performing the
+	// redirect.
 	Redirect int
-	Visits   []time.Time
+
+	// Visits holds past visits for analytics purposes. See the VisitsPer method
+	// on how visits can be aggregated per second, minute, hour or day.
+	Visits []time.Time
 }
 
-// VisitsPer counts visits grouped by granularity.
-func (link *Link) VisitsPer(granularity time.Duration) (visits map[string]int) {
+// VisitsPer aggregates the number of visits by the selected interval. The
+// result is a map where keys are times and values are the number of visits.
+func (link *Link) VisitsPer(interval time.Duration) (visits map[string]int) {
 
 	var key string
 
-	switch granularity {
+	switch interval {
 	case time.Second:
 		key = "2006-01-02T15:04:05"
 	case time.Minute:
@@ -35,7 +51,7 @@ func (link *Link) VisitsPer(granularity time.Duration) (visits map[string]int) {
 
 	visits = make(map[string]int)
 
-	// Count visits grouped by the chosen granularity.
+	// Count visits grouped by the chosen interval.
 	for _, visit := range link.Visits {
 
 		visitKey := visit.Format(key)
