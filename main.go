@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	r, err := beatly.NewBoltStore("beatly.db")
+	r, err := beatly.NewSQLiteStore("beatly.db")
 	if err != nil {
 		log.Fatal(err)
 	}
